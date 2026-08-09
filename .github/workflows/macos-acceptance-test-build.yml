@@ -59,8 +59,9 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm exec prisma generate
-          pnpm desktop:build
-          pnpm desktop:test
+          pnpm --dir apps/printer-agent build
+          pnpm --dir apps/printer-agent test
+          pnpm exec tsx tests/desktop-foundation.unit.ts
           pnpm exec tsc --noEmit -p tsconfig.typecheck.json
           git diff --check
 
