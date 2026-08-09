@@ -76,7 +76,8 @@ jobs:
           Copy-Item src/lib/printer-discovery-filter.ts apps/printer-agent/src/lib/printer-discovery-filter.ts -Force
           pnpm --dir apps/printer-agent exec tsc -p tsconfig.json
           Copy-Item apps/printer-agent/src/preload.cjs apps/printer-agent/dist/preload.cjs -Force
-          pnpm desktop:test
+          pnpm --dir apps/printer-agent test
+          pnpm exec tsx tests/desktop-foundation.unit.ts
           pnpm exec tsc --noEmit -p tsconfig.typecheck.json
 
       - name: Run Hugin and fiscal software regressions
