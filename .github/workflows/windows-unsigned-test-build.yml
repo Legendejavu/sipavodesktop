@@ -70,6 +70,7 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
+          pnpm exec prisma generate
           Copy-Item src/lib/receipt-layout.ts apps/printer-agent/src/lib/receipt-layout.ts -Force
           Copy-Item src/lib/turkish-escpos-encoding.ts apps/printer-agent/src/lib/turkish-escpos-encoding.ts -Force
           Copy-Item src/lib/cash-drawer-pulse.ts apps/printer-agent/src/lib/cash-drawer-pulse.ts -Force
