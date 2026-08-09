@@ -63,3 +63,20 @@ metadata, migration ve gerçek cihaz kapıları geçmeden onaylanamaz.
 Windows publish ayrıca aynı repository'deki temiz Windows acceptance run'ından
 üretilmiş `sipavo-windows-migration-evidence` artifact'ının run ID'sini ister.
 Serbest metin/secret içindeki JSON migration kanıtı olarak kabul edilmez.
+
+## Windows unsigned manual acceptance build
+
+`Windows Unsigned Test Build` is a manually dispatched, non-production workflow.
+It builds `Sipavo-Setup-2.0.0-x64.exe` on GitHub's `windows-latest` runner and
+uploads it only as the `sipavo-desktop-windows-2.0.0-test` Actions artifact.
+The run must be confirmed with `UNSIGNED-TEST` and requires the private source
+checkout secret `SOURCE_REPO_TOKEN` (Contents: Read on `Legendejavu/sipova`).
+
+The workflow deliberately requires Authenticode status `NotSigned`. It does not
+create a release or tag, publish updater metadata, or weaken the signed stable
+distribution workflow. The packaged stable mandatory-update policy remains
+active and therefore fails closed when no stable release metadata is available.
+
+Windows may warn that the publisher cannot be verified. If the installer was
+downloaded from the official Sipavo Actions run, select “Daha fazla bilgi” and
+then “Yine de çalıştır” to continue. This is user guidance, not a security bypass.

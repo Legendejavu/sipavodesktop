@@ -1,0 +1,190 @@
+name: Windows Unsigned Test Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Exact Legendejavu/sipova commit containing Sipavo Desktop 2.0.0"
+        required: true
+      confirm_unsigned_test:
+        description: "Type UNSIGNED-TEST to confirm this is not a production release"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-unsigned-test-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build unsigned Windows acceptance installer
+    runs-on: windows-latest
+    env:
+      SIPAVO_ALLOW_UNSIGNED_WINDOWS_TEST_BUILD: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Guard manual unsigned test mode
+        shell: pwsh
+        run: |
+          if ("${{ inputs.confirm_unsigned_test }}" -cne "UNSIGNED-TEST") {
+            throw "CONFIRMATION_REQUIRED"
+          }
+          if ($env:SIPAVO_ALLOW_UNSIGNED_WINDOWS_TEST_BUILD -cne "1") {
+            throw "UNSIGNED_TEST_FLAG_REQUIRED"
+          }
+
+      - name: Check out exact private source revision
+        uses: actions/checkout@v4
+        with:
+          repository: Legendejavu/sipova
+          ref: ${{ inputs.source_ref }}
+          path: source
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+
+      - name: Install locked dependencies
+        working-directory: source
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Desktop identity and distribution policy
+        working-directory: source
+        shell: pwsh
+        run: |
+          node -e "const p=require('./apps/printer-agent/package.json');const pub=p.build?.publish?.[0];const expected={version:'2.0.0',channel:'stable',appId:'com.sipavo.desktop',productName:'Sipavo',executableName:'Sipavo',provider:'github',owner:'Legendejavu',repo:'sipavodesktop',releaseType:'release'};const actual={version:p.version,channel:p.sipavoUpdateChannel,appId:p.build?.appId,productName:p.build?.productName,executableName:p.build?.executableName,provider:pub?.provider,owner:pub?.owner,repo:pub?.repo,releaseType:pub?.releaseType};for(const [key,value] of Object.entries(expected)){if(actual[key]!==value)throw new Error('IDENTITY_MISMATCH:'+key)};console.log(JSON.stringify(actual))"
+
+      - name: Build and test Desktop source
+        working-directory: source
+        shell: pwsh
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          Copy-Item src/lib/receipt-layout.ts apps/printer-agent/src/lib/receipt-layout.ts -Force
+          Copy-Item src/lib/turkish-escpos-encoding.ts apps/printer-agent/src/lib/turkish-escpos-encoding.ts -Force
+          Copy-Item src/lib/cash-drawer-pulse.ts apps/printer-agent/src/lib/cash-drawer-pulse.ts -Force
+          Copy-Item src/lib/printer-discovery-filter.ts apps/printer-agent/src/lib/printer-discovery-filter.ts -Force
+          pnpm --dir apps/printer-agent exec tsc -p tsconfig.json
+          Copy-Item apps/printer-agent/src/preload.cjs apps/printer-agent/dist/preload.cjs -Force
+          pnpm desktop:test
+          pnpm exec tsc --noEmit -p tsconfig.typecheck.json
+
+      - name: Run Hugin and fiscal software regressions
+        working-directory: source
+        run: |
+          pnpm exec tsx tests/fiscal-hugin-document-create-response.unit.ts
+          pnpm exec tsx tests/fiscal-hugin-request-diagnostic.unit.ts
+          pnpm exec tsx tests/fiscal-hugin-document-create-readiness.unit.ts
+          pnpm exec tsx tests/fiscal-hugin-headers.integration.ts
+          pnpm exec tsx tests/fiscal-hugin-user-messages.unit.ts
+          pnpm exec tsx tests/fiscal-mock-hugin.integration.ts
+          pnpm exec tsx tests/fiscal-mock-hugin-cash-sale.integration.ts
+
+      - name: Run printer and migration contract regressions
+        working-directory: source
+        run: |
+          pnpm exec tsx tests/print-transport-semantics.unit.ts
+          pnpm exec tsx tests/print-job-protocol-v2.integration.ts
+          pnpm exec tsx tests/printer-discovery-filter.unit.ts
+          pnpm exec tsx tests/cash-drawer-pulse.unit.ts
+          pnpm exec tsx tests/windows-migration-contract.unit.ts
+          git diff --check
+
+      - name: Build unsigned x64 NSIS installer
+        working-directory: source
+        shell: pwsh
+        run: |
+          if ($env:SIPAVO_ALLOW_UNSIGNED_WINDOWS_TEST_BUILD -cne "1") {
+            throw "UNSIGNED_TEST_FLAG_REQUIRED"
+          }
+          Remove-Item Env:CSC_LINK -ErrorAction SilentlyContinue
+          Remove-Item Env:CSC_KEY_PASSWORD -ErrorAction SilentlyContinue
+          Remove-Item Env:WIN_CSC_LINK -ErrorAction SilentlyContinue
+          Remove-Item Env:WIN_CSC_KEY_PASSWORD -ErrorAction SilentlyContinue
+          pnpm --dir apps/printer-agent exec electron-builder --win nsis --x64 `
+            -c.forceCodeSigning=false `
+            -c.win.signAndEditExecutable=false
+
+      - name: Verify installer, executable identity, and expected unsigned status
+        id: verify
+        working-directory: source
+        shell: pwsh
+        run: |
+          $release = Resolve-Path "apps/printer-agent/release"
+          $installer = Get-Item "$release/Sipavo-Setup-2.0.0-x64.exe"
+          $executable = Get-Item "$release/win-unpacked/Sipavo.exe"
+          $signature = Get-AuthenticodeSignature $installer.FullName
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+            throw "EXPECTED_NOT_SIGNED_BUT_WAS_$($signature.Status)"
+          }
+          if ($executable.VersionInfo.ProductName -ne "Sipavo") { throw "PRODUCT_NAME_MISMATCH" }
+          if ($executable.VersionInfo.FileVersion -notlike "2.0.0*") { throw "FILE_VERSION_MISMATCH" }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = $installer.Length
+          $stage = Join-Path $env:RUNNER_TEMP "sipavo-desktop-windows-2.0.0-test"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item $installer.FullName $stage
+          Get-ChildItem $release -File | Where-Object { $_.Name -in @("latest.yml", "Sipavo-Setup-2.0.0-x64.exe.blockmap") } | Copy-Item -Destination $stage
+          "$hash  $($installer.Name)" | Set-Content -Encoding ascii "$stage/SHA256SUMS.txt"
+          $metadata = [ordered]@{
+            classification = "NON-PRODUCTION TEST BUILD"
+            sourceRepository = "Legendejavu/sipova"
+            sourceCommit = (git rev-parse HEAD)
+            runner = "windows-latest"
+            productName = $executable.VersionInfo.ProductName
+            version = "2.0.0"
+            appId = "com.sipavo.desktop"
+            architecture = "x64"
+            installer = "NSIS"
+            executable = $executable.Name
+            authenticode = $signature.Status.ToString()
+            filename = $installer.Name
+            sizeBytes = $size
+            sha256 = $hash
+            updateChannel = "stable"
+            mandatoryUpdater = "ACTIVE_FAIL_CLOSED_WITHOUT_STABLE_RELEASE"
+            pairingMigration = "NOT VERIFIED"
+          }
+          $metadata | ConvertTo-Json | Set-Content -Encoding utf8 "$stage/BUILD-METADATA.json"
+          "artifact_path=$stage" >> $env:GITHUB_OUTPUT
+          "filename=$($installer.Name)" >> $env:GITHUB_OUTPUT
+          "size_bytes=$size" >> $env:GITHUB_OUTPUT
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+          "WINDOWS TEST ARTIFACT SIGNATURE: UNSIGNED / EXPECTED"
+
+      - name: Upload manual acceptance artifact only
+        uses: actions/upload-artifact@v4
+        with:
+          name: sipavo-desktop-windows-2.0.0-test
+          path: ${{ steps.verify.outputs.artifact_path }}/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write run summary
+        shell: pwsh
+        run: |
+          @"
+          ## Sipavo Desktop Windows 2.0.0 unsigned test artifact
+
+          - Classification: **NON-PRODUCTION TEST BUILD**
+          - Filename: `${{ steps.verify.outputs.filename }}`
+          - Size: `${{ steps.verify.outputs.size_bytes }}` bytes
+          - SHA-256: `${{ steps.verify.outputs.sha256 }}`
+          - Authenticode: **UNSIGNED / EXPECTED**
+          - Architecture: x64
+          - Installer: NSIS
+          - Mandatory updater: active; without a stable release the UI gate fails closed
+          - Pairing migration: **NOT VERIFIED**
+
+          No GitHub Release, tag, updater publication, or deployment is performed by this workflow.
+          "@ >> $env:GITHUB_STEP_SUMMARY
