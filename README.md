@@ -37,6 +37,10 @@ Pilot publish için `channel=pilot`, `-pilot.N` sürümü ve `confirm=PILOT` ger
 - `APPLE_API_KEY`: Base64 App Store Connect `.p8`
 - `APPLE_API_KEY_ID`: App Store Connect Key ID
 - `APPLE_API_ISSUER`: App Store Connect Issuer ID
+- `WIN_CSC_LINK`: Trusted CA organization-validated Windows code-signing PFX/P12
+- `WIN_CSC_KEY_PASSWORD`: Windows signing export password
+- `SOURCE_REPO_TOKEN`: `Legendejavu/sipova` için yalnız Contents: Read yetkili
+  fine-grained token; classic veya geniş kapsamlı token kullanmayın
 
 Secret değerleri repository dosyalarına veya release loglarına yazılmaz.
 
@@ -50,3 +54,7 @@ secrets ve Apple credential'ları rotate edilir.
 
 Production release; signing, notarization, stapling, Gatekeeper, updater
 metadata, migration ve gerçek cihaz kapıları geçmeden onaylanamaz.
+
+Windows publish ayrıca aynı repository'deki temiz Windows acceptance run'ından
+üretilmiş `sipavo-windows-migration-evidence` artifact'ının run ID'sini ister.
+Serbest metin/secret içindeki JSON migration kanıtı olarak kabul edilmez.

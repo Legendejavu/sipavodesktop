@@ -1,0 +1,55 @@
+name: Windows Migration Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Exact Legendejavu/sipova candidate source ref"
+        required: true
+      candidate_run_id:
+        description: "Desktop Distribution run that produced the signed Windows candidate"
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  verify-clean-windows-acceptance:
+    # This label must point to a restored clean Windows 11 acceptance VM, not a Mac emulator.
+    runs-on: [self-hosted, Windows, X64, sipavo-migration]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Legendejavu/sipova
+          ref: ${{ inputs.source_ref }}
+          path: source
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+      - name: Download exact signed candidate
+        shell: powershell
+        run: gh run download "${{ inputs.candidate_run_id }}" --repo "$env:GITHUB_REPOSITORY" --name "sipavo-desktop-windows-stable-2.0.0" --dir candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Download real Agent 1.0.8 fixture
+        shell: powershell
+        run: |
+          gh release download v1.0.8 --repo Legendejavu/sipavo-printer-agent-releases --pattern "Sipavo-Printer-Agent-Setup-1.0.8-x64.exe" --dir candidate
+          $hash=(Get-FileHash candidate/Sipavo-Printer-Agent-Setup-1.0.8-x64.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne "7cfffbfb52acb009e55bd6264dd38f2d6c52d94dd8f0f78c5fced09ec3a02303") { throw "LEGACY_FIXTURE_HASH_MISMATCH" }
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Verify evidence captured by the clean-Windows acceptance procedure
+        shell: powershell
+        run: |
+          $evidence="C:\SipavoAcceptance\windows-migration-evidence.json"
+          if (-not (Test-Path $evidence)) { throw "Run the documented packaged migration acceptance on this restored VM first." }
+          source/apps/printer-agent/scripts/verify-installer-migration.ps1 `
+            -LegacyInstaller candidate/Sipavo-Printer-Agent-Setup-1.0.8-x64.exe `
+            -DesktopInstaller candidate/Sipavo-Setup-2.0.0-x64.exe `
+            -EvidencePath $evidence
+          Copy-Item $evidence "$env:RUNNER_TEMP/windows-migration-evidence.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sipavo-windows-migration-evidence
+          path: ${{ runner.temp }}/windows-migration-evidence.json
+          retention-days: 30
