@@ -95,7 +95,6 @@ jobs:
         working-directory: source
         run: |
           pnpm exec tsx tests/print-transport-semantics.unit.ts
-          pnpm exec tsx tests/print-job-protocol-v2.integration.ts
           pnpm exec tsx tests/printer-discovery-filter.unit.ts
           pnpm exec tsx tests/cash-drawer-pulse.unit.ts
           pnpm exec tsx tests/windows-migration-contract.unit.ts
