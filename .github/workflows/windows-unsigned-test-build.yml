@@ -62,7 +62,7 @@ jobs:
         working-directory: source
         shell: pwsh
         run: |
-          node -e "const p=require('./apps/printer-agent/package.json');const pub=p.build?.publish?.[0];const expected={version:'2.0.0',channel:'stable',appId:'com.sipavo.desktop',productName:'Sipavo',executableName:'Sipavo',provider:'github',owner:'Legendejavu',repo:'sipavodesktop',releaseType:'release'};const actual={version:p.version,channel:p.sipavoUpdateChannel,appId:p.build?.appId,productName:p.build?.productName,executableName:p.build?.executableName,provider:pub?.provider,owner:pub?.owner,repo:pub?.repo,releaseType:pub?.releaseType};for(const [key,value] of Object.entries(expected)){if(actual[key]!==value)throw new Error('IDENTITY_MISMATCH:'+key)};console.log(JSON.stringify(actual))"
+          node -e "const p=require('./apps/printer-agent/package.json');const pub=p.build?.publish?.[0];if(p.sipavoAcceptanceBuild!==undefined)throw new Error('SOURCE_MUST_DEFAULT_TO_PRODUCTION_POLICY');const expected={version:'2.0.0',channel:'stable',appId:'com.sipavo.desktop',productName:'Sipavo',executableName:'Sipavo',provider:'github',owner:'Legendejavu',repo:'sipavodesktop',releaseType:'release'};const actual={version:p.version,channel:p.sipavoUpdateChannel,appId:p.build?.appId,productName:p.build?.productName,executableName:p.build?.executableName,provider:pub?.provider,owner:pub?.owner,repo:pub?.repo,releaseType:pub?.releaseType};for(const [key,value] of Object.entries(expected)){if(actual[key]!==value)throw new Error('IDENTITY_MISMATCH:'+key)};console.log(JSON.stringify(actual))"
 
       - name: Build and test Desktop source
         working-directory: source
@@ -100,6 +100,13 @@ jobs:
           pnpm exec tsx tests/cash-drawer-pulse.unit.ts
           pnpm exec tsx tests/windows-migration-contract.unit.ts
           git diff --check
+
+      - name: Mark package as non-production acceptance build
+        working-directory: source
+        shell: pwsh
+        run: |
+          node -e "const fs=require('fs');const path='apps/printer-agent/package.json';const value=JSON.parse(fs.readFileSync(path));value.sipavoAcceptanceBuild=true;fs.writeFileSync(path,JSON.stringify(value,null,2)+'\n')"
+          node -e "const p=require('./apps/printer-agent/package.json');if(p.sipavoAcceptanceBuild!==true)throw new Error('ACCEPTANCE_BUILD_MARKER_MISSING')"
 
       - name: Build unsigned x64 NSIS installer
         working-directory: source
@@ -153,7 +160,7 @@ jobs:
             sizeBytes = $size
             sha256 = $hash
             updateChannel = "stable"
-            mandatoryUpdater = "ACTIVE_FAIL_CLOSED_WITHOUT_STABLE_RELEASE"
+            mandatoryUpdater = "BYPASSED_IN_PACKAGED_NON_PRODUCTION_ACCEPTANCE_BUILD"
             pairingMigration = "NOT VERIFIED"
           }
           $metadata | ConvertTo-Json | Set-Content -Encoding utf8 "$stage/BUILD-METADATA.json"
@@ -184,7 +191,7 @@ jobs:
           - Authenticode: **UNSIGNED / EXPECTED**
           - Architecture: x64
           - Installer: NSIS
-          - Mandatory updater: active; without a stable release the UI gate fails closed
+          - Mandatory updater: bypassed only by packaged NON-PRODUCTION acceptance marker
           - Pairing migration: **NOT VERIFIED**
 
           No GitHub Release, tag, updater publication, or deployment is performed by this workflow.
