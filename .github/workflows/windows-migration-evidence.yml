@@ -38,16 +38,17 @@ jobs:
           if ($hash -ne "7cfffbfb52acb009e55bd6264dd38f2d6c52d94dd8f0f78c5fced09ec3a02303") { throw "LEGACY_FIXTURE_HASH_MISMATCH" }
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Verify evidence captured by the clean-Windows acceptance procedure
+      - name: Run packaged migration acceptance and produce evidence
         shell: powershell
+        env:
+          SIPAVO_MIGRATION_PAIRING_CODE: ${{ secrets.WINDOWS_MIGRATION_PAIRING_CODE }}
+          SIPAVO_MIGRATION_TEST_STORE_ID: ${{ vars.WINDOWS_MIGRATION_TEST_STORE_ID }}
+          SIPAVO_MIGRATION_TEST_DEVICE_ID: ${{ vars.WINDOWS_MIGRATION_TEST_DEVICE_ID }}
         run: |
-          $evidence="C:\SipavoAcceptance\windows-migration-evidence.json"
-          if (-not (Test-Path $evidence)) { throw "Run the documented packaged migration acceptance on this restored VM first." }
-          source/apps/printer-agent/scripts/verify-installer-migration.ps1 `
+          source/apps/printer-agent/scripts/run-windows-migration-acceptance.ps1 `
             -LegacyInstaller candidate/Sipavo-Printer-Agent-Setup-1.0.8-x64.exe `
-            -DesktopInstaller candidate/Sipavo-Setup-2.0.0-x64.exe `
-            -EvidencePath $evidence
-          Copy-Item $evidence "$env:RUNNER_TEMP/windows-migration-evidence.json"
+            -DesktopInstaller candidate/Sipavo-Setup-2.0.0-x64.exe
+          Copy-Item "C:\SipavoAcceptance\windows-migration-evidence.json" "$env:RUNNER_TEMP/windows-migration-evidence.json"
       - uses: actions/upload-artifact@v4
         with:
           name: sipavo-windows-migration-evidence

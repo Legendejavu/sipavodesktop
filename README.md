@@ -41,6 +41,11 @@ Pilot publish için `channel=pilot`, `-pilot.N` sürümü ve `confirm=PILOT` ger
 - `WIN_CSC_KEY_PASSWORD`: Windows signing export password
 - `SOURCE_REPO_TOKEN`: `Legendejavu/sipova` için yalnız Contents: Read yetkili
   fine-grained token; classic veya geniş kapsamlı token kullanmayın
+- `WINDOWS_MIGRATION_PAIRING_CODE`: yalnız disposable migration store için kısa
+  ömürlü pairing code; loglanmaz
+
+Migration runner ayrıca secret olmayan `WINDOWS_MIGRATION_TEST_STORE_ID` ve
+`WINDOWS_MIGRATION_TEST_DEVICE_ID` repository variables değerlerini kullanır.
 
 Secret değerleri repository dosyalarına veya release loglarına yazılmaz.
 
